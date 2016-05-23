@@ -15,7 +15,9 @@ using Graphics2D
 using SchnyderWoods
 
 S = USW(1000) # generates a uniform Schnyder wood
-showgraphics(draw(S;linesize=0.125,pointsize=0.001))
+showgraphics(draw(S;linesize=0.125,pointsize=0.001;includefaces=true))
 ```
+
+![A Schnyder wood](https://github.com/sswatson/SchnyderWoods.jl/blob/master/images/sw.png)
 
 [![Build Status](https://travis-ci.org/sswatson/SchnyderWoods.jl.svg?branch=master)](https://travis-ci.org/sswatson/SchnyderWoods.jl)

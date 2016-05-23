@@ -5,6 +5,11 @@ import Graphics2D,
        Base.show
 
 export PlanarMap,
+       faces,
+       face,
+       cw,
+       ccw,
+       edges,
        SchnyderWood,
        schnyder,
        USW,
@@ -68,7 +73,7 @@ function contour_to_tree(v::Array{Int64,1})
     stack = Int64[n+1]
     heads = Int64[]
     ones = 0
-    blue_edges = Dict{Int64,Int64}()
+    bluetree = Dict{Int64,Int64}()
     for s in diff(v)
         if s == 1
             push!(stack,ones+1)
@@ -76,12 +81,12 @@ function contour_to_tree(v::Array{Int64,1})
         else
             e = pop!(stack)
             push!(heads,e)
-            blue_edges[e] = stack[end]
+            bluetree[e] = stack[end]
             push!(M.nbs[e],stack[end])
             push!(M.nbs[stack[end]],e)
         end    
     end
-    return M, blue_edges, heads
+    return M, bluetree, heads
 end
 
 function pair_dyck_paths(n)
@@ -124,6 +129,15 @@ function edges(M::PlanarMap)
     return vcat([Tuple{Int64,Int64}[(u,v) for v in l] for (u,l) in enumerate(M.nbs)]...)
 end
 
+function edges(S::SchnyderWood)
+    all_edges = Tuple{Int64,Int64,ASCIIString}[]
+    for (d,c) in zip((S.bluetree,S.redtree,S.greentree),("blue","red","green"))
+        append!(all_edges,sort([[(k,d[k],c) for k in keys(d)];
+                                [(d[k],k,c) for k in keys(d)]]))
+    end				
+    return all_edges
+end
+
 function faces(M::PlanarMap)
     all_edges = edges(M)
     found_edges = zeros(Bool,length(all_edges))
@@ -138,15 +152,40 @@ function faces(M::PlanarMap)
     return all_faces
 end
 
+function faces(S::SchnyderWood)
+    n = length(S.M)-3
+    colors = Dict([((a,b),c) for (a,b,c) in edges(S)]);
+    all_edges = edges(S.M)
+    found_edges = zeros(Bool,length(all_edges))
+    all_faces = Array{Int64,1}[]
+    (u,v) = (n+1,1)
+    while sum(found_edges) < length(found_edges)
+        if colors[(u,v)] == "blue"
+            (u,v) = v,cw(S.M,v,u)
+        else
+            (u,v) = u,cw(S.M,u,v)
+        end
+        if found_edges[findfirst(all_edges,(u,v))]
+            continue
+        end
+        f = face(S.M,u,v)
+        for e in zip(f[1:end-1],f[2:end])
+            found_edges[findfirst(all_edges,e)] = true
+        end
+        push!(all_faces,f)
+    end
+    return all_faces
+end
+
 function add_red_tree(M::PlanarMap,
-                      blue_edges::Dict{Int64,Int64},
+                      bluetree::Dict{Int64,Int64},
                       Y::Array{Int64,1},
                       heads::Array{Int64,1})
     
     n = div(length(Y)-1,2)
     tails = Int64[]
     ones = 0
-    red_edges = Dict{Int64,Int64}()
+    redtree = Dict{Int64,Int64}()
     
     for s in diff(Y)
         if s == 1
@@ -162,20 +201,20 @@ function add_red_tree(M::PlanarMap,
     for t in tails
         headmatch = t == n+2 ? hc[end] : hc[findfirst(hc .≥ t) - 1]
         hc = hc[ hc .≠ headmatch ]
-        red_edges[headmatch] = t
-        blue_parent = blue_edges[headmatch]
+        redtree[headmatch] = t
+        blue_parent = bluetree[headmatch]
         insert!(M.nbs[headmatch],findfirst(M.nbs[headmatch],blue_parent),t)
         push!(M.nbs[t],headmatch)
     end
-    return M, red_edges
+    return M, redtree
 end
 
-function find_split(f::Array{Int64,1},blue_edges::Dict{Int64,Int64},red_edges::Dict{Int64,Int64})
+function find_split(f::Array{Int64,1},bluetree::Dict{Int64,Int64},redtree::Dict{Int64,Int64})
     # finds which vertex in each face has two incident faces outgoing red and blue
     for (i,v) in enumerate(f[1:end-1])
         prv = f[i == 1 ? length(f)-1 : i - 1]
         nxt = f[i == length(f)-1 ? 1 : i + 1]
-        if v in keys(red_edges) && red_edges[v] == prv && blue_edges[v] == nxt
+        if v in keys(redtree) && redtree[v] == prv && bluetree[v] == nxt
             return v, prv, nxt
         end
     end
@@ -183,27 +222,27 @@ function find_split(f::Array{Int64,1},blue_edges::Dict{Int64,Int64},red_edges::D
     return 0,0,0
 end
 
-function add_green_tree(M::PlanarMap,blue_edges::Dict{Int64,Int64},red_edges::Dict{Int64,Int64})
-    n = maximum(keys(blue_edges))
-    green_edges = Dict{Int64,Int64}()
+function add_green_tree(M::PlanarMap,bluetree::Dict{Int64,Int64},redtree::Dict{Int64,Int64})
+    n = maximum(keys(bluetree))
+    greentree = Dict{Int64,Int64}()
     found = false
     for f in faces(M)            
         if length(f) > 4
             if ~found && (n+1,1) in zip(f[1:end-1],f[2:end]) # detects outer face
                 leftedges = f[1:findfirst(f,n+2)-1]
                 for (i,w) in enumerate(leftedges)
-                    green_edges[w] = n+3
+                    greentree[w] = n+3
                     insert!(M.nbs[w],findfirst(M.nbs[w],f[i+1]),n+3)
                     unshift!(M.nbs[n+3],w)
                 end
                 found = true
             else
-                v, prv, nxt = find_split(f,blue_edges,red_edges)
+                v, prv, nxt = find_split(f,bluetree,redtree)
                 for (i,w) in enumerate(f[1:end-1])
                     if w == v || w == prv || w == nxt
                         continue
                     else
-                        green_edges[w] = v
+                        greentree[w] = v
                         insert!(M.nbs[w],findfirst(M.nbs[w],f[i+1]),v)
                         insert!(M.nbs[v],findfirst(M.nbs[v],prv)+1,w)
                     end
@@ -211,15 +250,15 @@ function add_green_tree(M::PlanarMap,blue_edges::Dict{Int64,Int64},red_edges::Di
             end
         end
     end
-    return M, green_edges
+    return M, greentree
 end
 
 function USW(n::Integer)
     X,Y = pair_dyck_paths(2n)
-    M, blue_edges, heads = contour_to_tree(X)
-    M, red_edges = add_red_tree(M,blue_edges,Y,heads)
-    M, green_edges = add_green_tree(M,blue_edges,red_edges)
-    return SchnyderWood(M,blue_edges,red_edges,green_edges)
+    M, bluetree, heads = contour_to_tree(X)
+    M, redtree = add_red_tree(M,bluetree,Y,heads)
+    M, greentree = add_green_tree(M,bluetree,redtree)
+    return SchnyderWood(M,bluetree,redtree,greentree)
 end
 
 function descendants(d::Dict{Int64,Int64})
@@ -284,21 +323,50 @@ function schnyder(S::SchnyderWood)
     return [schnyder_pair(v,S.bluetree,S.redtree,S.greentree,Db,Dr,Dg) for v=1:length(S.M)-3]
 end
     
-function draw(S::SchnyderWood;rot=0.0,linesize=0.125,pointsize=0.001)
-    f(z) = cis(0.0)*(z[1] + 0.5*z[2] + im * sqrt(3)/2 * z[2])
+function draw(S::SchnyderWood;
+	      rot=0.0,
+	      linesize=0.125,
+	      pointsize=0.001,
+	      pointcolor=Graphics2D.black,
+	      includefaces=false,
+	      includelabels=false,
+	      textsize=1.0)
+    ϕ(z) = cis(rot)*(z[1] + 0.5*z[2] + im * sqrt(3)/2 * z[2])
     n = length(S.M) - 3
     coords = schnyder(S)
+    colors = Dict([((a,b),c) for (a,b,c) in edges(S)])
     push!(coords,(0,2n+1))
     push!(coords,(0,0))
     push!(coords,(2n+1,0))
     grlist = Graphics2D.GraphicElement[]
     for (tree,color) in zip((S.bluetree,S.redtree,S.greentree),(Graphics2D.blue,Graphics2D.red,Graphics2D.green))
         for k=1:n
-            push!(grlist,Graphics2D.Line([f(coords[k]), f(coords[tree[k]])];color=color,linesize=linesize)) 
+            push!(grlist,Graphics2D.Line([ϕ(coords[k]), ϕ(coords[tree[k]])];color=color,linesize=linesize)) 
         end 
     end
-    append!(grlist,Graphics2D.GraphicElement[Graphics2D.Point(f(z);pointsize=pointsize) for z in coords])
+    if includelabels
+        append!(grlist,Graphics2D.GraphicElement[Graphics2D.Point(ϕ(z);pointsize=1.1*pointsize) for z in coords])
+    end
+    append!(grlist,Graphics2D.GraphicElement[Graphics2D.Point(ϕ(z);pointsize=pointsize,color=pointcolor) for z in coords])
+    if includefaces
+        append!(grlist,Graphics2D.GraphicElement[Graphics2D.Line(Complex128[f(coords[k]) for k in fc];
+                                                      fill=true,
+						      linesize=0.001,
+						      fillcolor=facecolor(sort(ASCIIString[colors[p] 
+						          for p in zip(fc[1:end-1],fc[2:end])])))
+						              for fc in faces(S.M)[2:end]])
+    end
+    if includelabels
+        append!(grlist,Graphics2D.GraphicElement[
+		 Graphics2D.GraphicText([real(ϕ(z)),imag(ϕ(z))],string(i);textsize=textsize) for (i,z) in enumerate(coords)])
+    end
     return grlist
+end
+
+function facecolor(s::Array{ASCIIString,1})
+    destring_dict = Dict("green"=>Graphics2D.green,"blue"=>Graphics2D.blue,"red"=>Graphics2D.red)
+    destring(s::ASCIIString) = destring_dict[s]
+    return 1/3 * sum(map(destring,s))
 end
 
 end # module
