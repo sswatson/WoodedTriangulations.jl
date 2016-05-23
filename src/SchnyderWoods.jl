@@ -349,7 +349,7 @@ function draw(S::SchnyderWood;
     end
     append!(grlist,Graphics2D.GraphicElement[Graphics2D.Point(ϕ(z);pointsize=pointsize,color=pointcolor) for z in coords])
     if includefaces
-        append!(grlist,Graphics2D.GraphicElement[Graphics2D.Line(Complex128[f(coords[k]) for k in fc];
+        append!(grlist,Graphics2D.GraphicElement[Graphics2D.Line(Complex128[ϕ(coords[k]) for k in fc];
                                                       fill=true,
 						      linesize=0.001,
 						      fillcolor=facecolor(sort(ASCIIString[colors[p] 
