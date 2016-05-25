@@ -44,7 +44,7 @@ p0precise(a,c,n) = Float64(binomial(big(n),big(div(n+c-a,2))) * big(1/2)^n)
 function p0(a,c,n::Int64) 
     if mod(n+c-a,2) ≠ 0 || abs(a-c) > n
         return 0.0
-    elseif n < 20_000
+    elseif n < 15_000
         return p0float(a,c,n)
     else
         # Use binomial approxmation
@@ -89,13 +89,17 @@ function contour_to_tree(v::Array{Int64,1})
     return M, bluetree, heads
 end
 
-function pair_dyck_paths(n)
+function pair_dyck_paths(n::Integer;verbose=false)
 
     X = Int64[1]
     Y = Int64[3]
 
+    power_of_ten = 10^floor(Integer,log10(n/2))
+
     for k=1:n
-        if mod(k,100_000) == 0 print(k, " ") end
+        if verbose && k % power_of_ten == 0
+	    println(k,"/",n)
+	end
         (a,b) = takestep(X[end],Y[end],(n-k))
         push!(X,a)
         push!(Y,b)
@@ -138,7 +142,7 @@ function edges(S::SchnyderWood)
     return all_edges
 end
 
-function faces(M::PlanarMap)
+function faces_old(M::PlanarMap)
     all_edges = edges(M)
     found_edges = zeros(Bool,length(all_edges))
     all_faces = Array{Int64,1}[]
@@ -146,6 +150,19 @@ function faces(M::PlanarMap)
         f = face(M,all_edges[findfirst(~found_edges)]...)
         for e in zip(f[1:end-1],f[2:end])
             found_edges[findfirst(all_edges,e)] = true
+        end
+        push!(all_faces,f)
+    end
+    return all_faces
+end
+
+function faces(M::PlanarMap)
+    rem_edges = Set(edges(M))
+    all_faces = Array{Int64,1}[]
+    while length(rem_edges) > 0
+        f = SchnyderWoods.face(M,pop!(rem_edges)...)
+        for e in zip(f[1:end-1],f[2:end])
+	    delete!(rem_edges,e)
         end
         push!(all_faces,f)
     end
@@ -222,6 +239,20 @@ function find_split(f::Array{Int64,1},bluetree::Dict{Int64,Int64},redtree::Dict{
     return 0,0,0
 end
 
+function rotate(a::Array{Int64,1},n::Integer)
+    return vcat(a[n:end],a[1:n-1])
+end
+
+function findpair(a::Array{Int64,1},m::Integer,n::Integer)
+    for k=2:length(a)
+        if a[k-1] == m && a[k] == n
+            return k
+        end
+    end   
+    return 0 
+end
+
+
 function add_green_tree(M::PlanarMap,bluetree::Dict{Int64,Int64},redtree::Dict{Int64,Int64})
     n = maximum(keys(bluetree))
     greentree = Dict{Int64,Int64}()
@@ -229,6 +260,8 @@ function add_green_tree(M::PlanarMap,bluetree::Dict{Int64,Int64},redtree::Dict{I
     for f in faces(M)            
         if length(f) > 4
             if ~found && (n+1,1) in zip(f[1:end-1],f[2:end]) # detects outer face
+	        f = rotate(f[1:end-1],findpair(f,n+1,1))
+		push!(f,f[1])
                 leftedges = f[1:findfirst(f,n+2)-1]
                 for (i,w) in enumerate(leftedges)
                     greentree[w] = n+3
@@ -238,14 +271,12 @@ function add_green_tree(M::PlanarMap,bluetree::Dict{Int64,Int64},redtree::Dict{I
                 found = true
             else
                 v, prv, nxt = find_split(f,bluetree,redtree)
-                for (i,w) in enumerate(f[1:end-1])
-                    if w == v || w == prv || w == nxt
-                        continue
-                    else
-                        greentree[w] = v
-                        insert!(M.nbs[w],findfirst(M.nbs[w],f[i+1]),v)
-                        insert!(M.nbs[v],findfirst(M.nbs[v],prv)+1,w)
-                    end
+		idx = findfirst(M.nbs[v],prv)+1
+		fc = rotate(f[1:end-1],findfirst(f,v))[3:end]
+                for (i,w) in enumerate(fc[1:end-1])
+                    greentree[w] = v
+                    insert!(M.nbs[w],findfirst(M.nbs[w],fc[i+1]),v)
+                    insert!(M.nbs[v],idx,w)
                 end
             end
         end
@@ -288,19 +319,19 @@ function flowline(v::Int64,d::Dict{Int64,Int64})
 end
 
 function schnyder_one(v::Int64,
-                      blue_tree::Dict{Int64,Int64},
-                      red_tree::Dict{Int64,Int64},
-                      green_tree::Dict{Int64,Int64},
+                      bluetree::Dict{Int64,Int64},
+                      redtree::Dict{Int64,Int64},
+                      greentree::Dict{Int64,Int64},
                       Db::Array{Int64,1},
                       Dr::Array{Int64,1},
                       Dg::Array{Int64,1})
     boundary_verts = 0
     interior_verts = 0
-    for w in flowline(v,red_tree)[1:end-1]
+    for w in flowline(v,redtree)[1:end-1]
         interior_verts += Dg[w]
         boundary_verts += 1
     end
-    for w in flowline(v,blue_tree)[2:end-1]
+    for w in flowline(v,bluetree)[2:end-1]
         interior_verts += Dg[w] 
         boundary_verts += 1
     end
@@ -308,19 +339,21 @@ function schnyder_one(v::Int64,
 end
 
 function schnyder_pair(v::Int64,
-                       blue_tree::Dict{Int64,Int64},
-                       red_tree::Dict{Int64,Int64},
-                       green_tree::Dict{Int64,Int64},
+                       bluetree::Dict{Int64,Int64},
+                       redtree::Dict{Int64,Int64},
+                       greentree::Dict{Int64,Int64},
                        Db::Array{Int64,1},
                        Dr::Array{Int64,1},
                        Dg::Array{Int64,1})
-    return schnyder_one(v,blue_tree,red_tree,green_tree,Db,Dr,Dg), 
-           schnyder_one(v,red_tree,green_tree,blue_tree,Dr,Dg,Db) 
+    return schnyder_one(v,bluetree,redtree,greentree,Db,Dr,Dg), 
+           schnyder_one(v,redtree,greentree,bluetree,Dr,Dg,Db) 
 end
 
 function schnyder(S::SchnyderWood)
+    n = length(S.M) - 3
     Db, Dr, Dg = map(descendants,(S.bluetree,S.redtree,S.greentree))
-    return [schnyder_pair(v,S.bluetree,S.redtree,S.greentree,Db,Dr,Dg) for v=1:length(S.M)-3]
+    return [[schnyder_pair(v,S.bluetree,S.redtree,S.greentree,Db,Dr,Dg) for v=1:length(S.M)-3];
+    	      [(0,2n+1),(0,0),(2n+1,0)]]
 end
     
 function draw(S::SchnyderWood;
@@ -335,9 +368,6 @@ function draw(S::SchnyderWood;
     n = length(S.M) - 3
     coords = schnyder(S)
     colors = Dict([((a,b),c) for (a,b,c) in edges(S)])
-    push!(coords,(0,2n+1))
-    push!(coords,(0,0))
-    push!(coords,(2n+1,0))
     grlist = Graphics2D.GraphicElement[]
     for (tree,color) in zip((S.bluetree,S.redtree,S.greentree),(Graphics2D.blue,Graphics2D.red,Graphics2D.green))
         for k=1:n
@@ -354,7 +384,7 @@ function draw(S::SchnyderWood;
 						      linesize=0.001,
 						      fillcolor=facecolor(sort(ASCIIString[colors[p] 
 						          for p in zip(fc[1:end-1],fc[2:end])])))
-						              for fc in faces(S.M)[2:end]])
+						              for fc in sort(faces(S.M),by=length)[1:end-1]])
     end
     if includelabels
         append!(grlist,Graphics2D.GraphicElement[
