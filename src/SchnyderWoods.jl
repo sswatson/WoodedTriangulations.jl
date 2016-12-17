@@ -134,7 +134,7 @@ function edges(M::PlanarMap)
 end
 
 function edges(S::SchnyderWood)
-    all_edges = Tuple{Int64,Int64,ASCIIString}[]
+    all_edges = Tuple{Int64,Int64,String}[]
     for (d,c) in zip((S.bluetree,S.redtree,S.greentree),("blue","red","green"))
         append!(all_edges,sort([[(k,d[k],c) for k in keys(d)];
                                 [(d[k],k,c) for k in keys(d)]]))
@@ -379,12 +379,13 @@ function draw(S::SchnyderWood;
     end
     append!(grlist,Graphics2D.GraphicElement[Graphics2D.Point(ϕ(z);pointsize=pointsize,color=pointcolor) for z in coords])
     if includefaces
-        append!(grlist,Graphics2D.GraphicElement[Graphics2D.Line(Complex128[ϕ(coords[k]) for k in fc];
-                                                      fill=true,
-						      linesize=0.001,
-						      fillcolor=facecolor(sort(ASCIIString[colors[p] 
-						          for p in zip(fc[1:end-1],fc[2:end])])))
-						              for fc in sort(faces(S.M),by=length)[1:end-1]])
+        append!(grlist,Graphics2D.GraphicElement[
+	Graphics2D.Line(Complex128[ϕ(coords[k]) for k in fc];
+                        fill=true,
+			linesize=0.001,	
+			fillcolor=facecolor(sort(String[colors[p] 
+		   			          for p in zip(fc[1:end-1],fc[2:end])])))
+                                                  for fc in sort(faces(S.M),by=length)[1:end-1]])
     end
     if includelabels
         append!(grlist,Graphics2D.GraphicElement[
@@ -393,9 +394,9 @@ function draw(S::SchnyderWood;
     return grlist
 end
 
-function facecolor(s::Array{ASCIIString,1})
+function facecolor(s::Array{String,1})
     destring_dict = Dict("green"=>Graphics2D.green,"blue"=>Graphics2D.blue,"red"=>Graphics2D.red)
-    destring(s::ASCIIString) = destring_dict[s]
+    destring(s::String) = destring_dict[s]
     return 1/3 * sum(map(destring,s))
 end
 
