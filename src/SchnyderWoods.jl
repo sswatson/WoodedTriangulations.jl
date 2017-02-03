@@ -358,9 +358,9 @@ end
     
 function draw(S::SchnyderWood;
 	      rot=0.0,
-	      linesize=0.125,
+	      linewidth=0.125,
 	      pointsize=0.001,
-	      pointcolor=Graphics2D.black,
+	      pointcolor="black",
 	      includefaces=false,
 	      includelabels=false,
 	      textsize=1.0)
@@ -369,9 +369,9 @@ function draw(S::SchnyderWood;
     coords = schnyder(S)
     colors = Dict([((a,b),c) for (a,b,c) in edges(S)])
     grlist = Graphics2D.GraphicElement[]
-    for (tree,color) in zip((S.bluetree,S.redtree,S.greentree),(Graphics2D.blue,Graphics2D.red,Graphics2D.green))
+    for (tree,color) in zip((S.bluetree,S.redtree,S.greentree),("blue","red","green"))
         for k=1:n
-            push!(grlist,Graphics2D.Line([ϕ(coords[k]), ϕ(coords[tree[k]])];color=color,linesize=linesize)) 
+            push!(grlist,Graphics2D.Line([ϕ(coords[k]), ϕ(coords[tree[k]])];color=color,linewidth=linewidth)) 
         end 
     end
     if includelabels
@@ -382,7 +382,7 @@ function draw(S::SchnyderWood;
         append!(grlist,Graphics2D.GraphicElement[
 	Graphics2D.Line(Complex128[ϕ(coords[k]) for k in fc];
                         fill=true,
-			linesize=0.001,	
+			linewidth=0.001,	
 			fillcolor=facecolor(sort(String[colors[p] 
 		   			          for p in zip(fc[1:end-1],fc[2:end])])))
                                                   for fc in sort(faces(S.M),by=length)[1:end-1]])
@@ -395,9 +395,7 @@ function draw(S::SchnyderWood;
 end
 
 function facecolor(s::Array{String,1})
-    destring_dict = Dict("green"=>Graphics2D.green,"blue"=>Graphics2D.blue,"red"=>Graphics2D.red)
-    destring(s::String) = destring_dict[s]
-    return 1/3 * sum(map(destring,s))
+    return sum([1/3 * c for c in s])
 end
 
 end # module
